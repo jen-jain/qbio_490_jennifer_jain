@@ -20,10 +20,12 @@ Load all necessary packages, read in the clinical data.csv file you have in your
 ```{r}
 library(maftools)
 
-# read the clinical data created in the previous hw
-clinic <- read.csv("/home1/jkjain/490_cluster/analysis_data/brca_clinical_data.csv")
+# read the clinical data created in the previous homework
+clinic <- read.csv(
+  "/home1/jkjain/490_cluster/analysis_data/brca_clinical_data.csv"
+)
 
-# find the downloaded MAF file
+# find downloaded MAF files
 maf_files <- list.files(
   "/home1/jkjain/490_cluster/analysis_data/GDCdata",
   pattern = "\\.maf(\\.gz)?$",
@@ -32,26 +34,42 @@ maf_files <- list.files(
 )
 
 head(maf_files)
-#instantiate MAF_object
-maf_file <- maf_files[1]
-MAF_object <- read.maf( maf = maf_file, clinicalData = clinic, isTCGA = TRUE)
 
-#create figure directory to save images to
+maf_rds <- "/home1/jkjain/490_cluster/analysis_data/maf_object.rds"
+
+if (file.exists(maf_rds)) {
+  MAF_object <- readRDS(maf_rds)
+}else {
+  MAF_object <- merge_mafs(
+    mafs = maf_files,
+    clinicalData = clinic,
+    isTCGA = TRUE
+  )
+}
+
+# create figure directory
 fig_dir <- "/home1/jkjain/490_cluster/qbio_490_jennifer_jain/week6_genomics/figures"
 
-dir.create(fig_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(
+  fig_dir,
+  showWarnings = FALSE,
+  recursive = TRUE
+)
 ```
 
 It's useful to save your MAF_object, so that you don't have to go through the trouble of querying and preparing it everytime. The saveRDS function allows us to save an R object, allowing us to access it directly from our files. 
 ```{r}
-
-saveRDS(MAF_object, file = "/home1/jkjain/490_cluster/analysis_data/maf_object.rds")
+saveRDS(
+  MAF_object,
+  file = "/home1/jkjain/490_cluster/analysis_data/maf_object.rds"
+)
 ```
 
 When you reopen a new R session and want to access your MAF_object, you can use the readRDS function to load the object back into a new variable.
 ```{r}
-MAF_object <- readRDS(file = "/path/to/analysis_data/maf_object.rds")
-# ex. MAF_object <- readRDS(file = "/home1/yourname/490_cluster/analysis_data/maf_object.rds")
+MAF_object <- readRDS(
+  file = "/home1/jkjain/490_cluster/analysis_data/maf_object.rds"
+)
 ```
 
 *1*
@@ -115,6 +133,17 @@ top15_genes <- head(
 
 top15_genes
 
+# show plot in console now
+coOncoplot(
+  m1 = ductal_maf,
+  m2 = lobular_maf,
+  genes = top15_genes,
+  m1Name = "Ductal",
+  m2Name = "Lobular",
+  removeNonMutated = TRUE
+)
+
+# save plot
 png(
   file.path(fig_dir, "01_co_oncoplot_ductal_vs_lobular_top15.png"),
   width = 2200,
@@ -139,7 +168,78 @@ dev.off()
 Create a contingency table with your variable and chosen gene. Run a Fisher’s Exact Test between presence of mutations for that gene and your clinical variable. Create and save a mosaic plot. 
 Interpret the output of the Fisher’s Exact Test in terms of the odds ratio and p-value.
 ```{r}
+# Chosen gene
+chosen_gene <- "CDH1"
 
+# Get the samples containing a CDH1 mutation
+cdh1_mutated_samples <- unique(
+  as.character(
+    MAF_object@data$Tumor_Sample_Barcode[
+      MAF_object@data$Hugo_Symbol == chosen_gene
+    ]
+  )
+)
+
+# Determine whether each ductal/lobular tumor has a CDH1 mutation
+comparison_clinic <- clinic[!is.na(clinic$histology_group),]
+
+comparison_clinic$CDH1_status <- ifelse(
+  comparison_clinic$Tumor_Sample_Barcode %in%
+    cdh1_mutated_samples,
+  "Mutated",
+  "Wild-type"
+)
+
+comparison_clinic$CDH1_status <- factor(
+  comparison_clinic$CDH1_status,
+  levels = c("Mutated", "Wild-type"
+  )
+)
+
+# Create contingency table
+cdh1_table <- table(
+  comparison_clinic$histology_group,
+  comparison_clinic$CDH1_status
+)
+
+cdh1_table
+
+# Now run fisher's Exact Test
+fisher_result <- fisher.test(cdh1_table)
+
+fisher_result
+
+# plot in console
+mosaicplot(
+  cdh1_table,
+  main = "CDH1 Mutation Status: Ductal vs Lobular Breast Cancer",
+  xlab = "Histological Type",
+  ylab = "CDH1 Mutation Status",
+  color = TRUE
+)
+
+# save plot
+png(
+  file.path(fig_dir, "02_CDH1_mosaic_ductal_vs_lobular.png"),
+  width = 1600,
+  height = 1100,
+  res = 180
+)
+
+mosaicplot(
+  cdh1_table,
+  main = "CDH1 Mutation Status: Ductal vs Lobular Breast Cancer",
+  xlab = "Histological Type",
+  ylab = "CDH1 Mutation Status",
+  color = TRUE
+)
+
+dev.off()
+
+# Interpretation:
+# Fisher's Exact Test showed a strong association between histological type and CDH1 mutation status
+# odds ratio was approximately 46 and the p-value was < 2.2e-16.
+# So, CDH1 mutations were much more strongly associated with lobular tumors than with ductal tumors.
 ```
 
 
@@ -147,7 +247,43 @@ Interpret the output of the Fisher’s Exact Test in terms of the odds ratio and
 Subset your maf_object based on your chosen clinical variable and create a co-lollipop plot of your chosen gene divided between the two different clinical variable possibilities. Include descriptive names on your plot.
 Do you notice any difference in terms of mutations (e.g. sites, types, number) between the two populations?
 ```{r}
+# The ductal_maf and lobular_maf objects were created in Part 2.
 
+# show plot in RStudio
+lollipopPlot2(
+  m1 = ductal_maf,
+  m2 = lobular_maf,
+  gene = "CDH1",
+  m1_name = "Ductal",
+  m2_name = "Lobular"
+)
+
+# save plot
+png(
+  file.path(fig_dir, "03_CDH1_lollipop_ductal_vs_lobular.png"),
+  width = 2200,
+  height = 1400,
+  res = 180
+)
+
+lollipopPlot2(
+  m1 = ductal_maf,
+  m2 = lobular_maf,
+  gene = "CDH1",
+  m1_name = "Ductal",
+  m2_name = "Lobular"
+)
+
+dev.off()
+
+# Interpretation:
+# CDH1 mutations were much more common in lobular tumors than in ductal tumors, since
+# approximately 68% of lobular tumors contained a CDH1 mutation, compared with only about 2% of ductal
+# tumors.
+# The lobular mutations also occurred at multiple positions throughout CDH1 rather than at a single point often.
+#
+# This is consistent with CDH1 functioning as a tumor-suppressor gene.
+# Many different kinds of mutations at different regions can disrupt the cadherin function.
 ```
 
 
@@ -155,5 +291,73 @@ Do you notice any difference in terms of mutations (e.g. sites, types, number) b
 Create your Overall_Survival_Status column and create a mafSurvival KM plot based on mutations in your chosen gene.
 Does there seem to be a difference? Hypothesize why or not based on the other analysis you did with the gene above.
 ```{r}
+# Code: 1 = dead, 0 = living
+clinic$Overall_Survival_Status <- ifelse(
+  toupper(as.character(clinic$vital_status)) %in%
+    c("DEAD", "DECEASED"),1, 0
+)
 
+# Convert character fields to numeric
+death_time <- as.numeric(as.character(clinic$death_days_to)
+)
+
+followup_time <- suppressWarnings(
+  as.numeric(as.character(clinic$last_contact_days_to))
+)
+
+# ifelse: death time for deceased patients, but use last-contact time for living patients
+clinic$Overall_Survival_Time <- ifelse(
+  clinic$Overall_Survival_Status == 1,
+  death_time,
+  followup_time
+)
+
+survival_clinic <- clinic[
+  !is.na(clinic$Overall_Survival_Time) &
+  !is.na(clinic$Overall_Survival_Status),
+]
+
+nrow(clinic)
+nrow(survival_clinic)
+
+summary(clinic$Overall_Survival_Time)
+table(clinic$Overall_Survival_Status, useNA = "ifany")
+
+# lastly show plot in RStudio
+mafSurvival(
+  maf = MAF_object,
+  genes = "CDH1",
+  clinicalData = survival_clinic,
+  time = "Overall_Survival_Time",
+  Status = "Overall_Survival_Status",
+  groupNames = c("CDH1 Mutant", "CDH1 WT"),
+  isTCGA = TRUE
+)
+
+# and save plot
+png(
+  file.path(fig_dir, "04_CDH1_Kaplan_Meier_survival.png"),
+  width = 1800,
+  height = 1400,
+  res = 180
+)
+
+mafSurvival(
+  maf = MAF_object,
+  genes = "CDH1",
+  clinicalData = survival_clinic,
+  time = "Overall_Survival_Time",
+  Status = "Overall_Survival_Status",
+  groupNames = c("CDH1 Mutant", "CDH1 WT"),
+  isTCGA = TRUE
+)
+
+dev.off()
+
+# Interpretation: The Kaplan-Meier analysis did NOT show a statistically significant survival difference
+# between CDH1-mutant and CDH1-wild-type  tumors, with a p-value of approximately 0.119.
+
+# Although the survival curves appeared somewhat different, the  evidence was not strong enough to conclude that
+# CDH1 mutation status was associated with overall survival in this cohort. This makes sense, since even if CDH1 mutation is
+# strongly associated with lobular histology, survival is also affected by many other important factors like treatment and age.
 ```
